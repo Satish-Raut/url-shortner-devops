@@ -1,0 +1,8 @@
+{
+  "rewrites": [
+    {
+      "source": "/api/:path*",
+      "destination": "https://url-shortne-backend-1xi9.onrender.com/:path*"
+    }
+  ]
+}

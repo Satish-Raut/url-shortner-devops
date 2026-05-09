@@ -1,0 +1,16 @@
+[
+  {
+    "id": 1,
+    "originalUrl": "https://www.google.com",
+    "shortUrl": "google-search",
+    "clicks": 12,
+    "createdAt": "2024-03-01T10:00:00.000Z"
+  },
+  {
+    "id": 2,
+    "originalUrl": "https://github.com/google/guava",
+    "shortUrl": "guava-lib",
+    "clicks": 45,
+    "createdAt": "2024-03-02T14:30:00.000Z"
+  }
+]

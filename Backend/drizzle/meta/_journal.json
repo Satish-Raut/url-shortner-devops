@@ -1,0 +1,27 @@
+{
+  "version": "7",
+  "dialect": "mysql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "5",
+      "when": 1774695941847,
+      "tag": "0000_graceful_mordo",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "5",
+      "when": 1774979795176,
+      "tag": "0001_amazing_norrin_radd",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1775021941193,
+      "tag": "0002_spotty_wild_pack",
+      "breakpoints": true
+    }
+  ]
+}
