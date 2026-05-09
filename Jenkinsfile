@@ -83,34 +83,17 @@ pipeline {
         stage('Deploy to EC2') {
             steps {
                 echo '🚀 Transferring images and deploying to EC2...'
-                sshagent(['ec2-ssh-key']) {
+                // Use withCredentials instead of sshagent (fixes Windows ssh-agent compatibility issue)
+                withCredentials([sshUserPrivateKey(credentialsId: 'ec2-ssh-key', keyFileVariable: 'SSH_KEY', usernameVariable: 'SSH_USER')]) {
 
-                    // Copy image tar files to EC2
-                    bat "scp -o StrictHostKeyChecking=no backend.tar %EC2_USER%@%EC2_HOST%:/home/ubuntu/"
-                    bat "scp -o StrictHostKeyChecking=no frontend.tar %EC2_USER%@%EC2_HOST%:/home/ubuntu/"
-                    bat "scp -o StrictHostKeyChecking=no docker-compose.yml %EC2_USER%@%EC2_HOST%:/home/ubuntu/url-shortener/"
+                    // Copy image tar files to EC2 using -i with the key file
+                    bat "scp -o StrictHostKeyChecking=no -i \"%SSH_KEY%\" backend.tar %EC2_USER%@%EC2_HOST%:/home/ubuntu/"
+                    bat "scp -o StrictHostKeyChecking=no -i \"%SSH_KEY%\" frontend.tar %EC2_USER%@%EC2_HOST%:/home/ubuntu/"
+                    bat "scp -o StrictHostKeyChecking=no -i \"%SSH_KEY%\" docker-compose.yml %EC2_USER%@%EC2_HOST%:/home/ubuntu/url-shortener/"
 
                     // SSH into EC2, load images, restart containers
                     bat """
-                        ssh -o StrictHostKeyChecking=no %EC2_USER%@%EC2_HOST% "
-                            echo '--- Loading Docker images ---'
-                            docker load -i /home/ubuntu/backend.tar
-                            docker load -i /home/ubuntu/frontend.tar
-
-                            echo '--- Stopping old containers ---'
-                            cd /home/ubuntu/url-shortener
-                            docker compose down || true
-
-                            echo '--- Starting new containers ---'
-                            DATABASE_URL='%DATABASE_URL%' JWT_KEY='%JWT_KEY%' SMTP_USER='%SMTP_USER%' SMTP_PASS='%SMTP_PASS%' FRONTEND_URL='http://%EC2_HOST%' docker compose up -d
-
-                            echo '--- Verifying deployment ---'
-                            sleep 10
-                            curl -f http://localhost:3000/health && echo 'Deployment successful!'
-
-                            echo '--- Cleaning up tar files ---'
-                            rm -f /home/ubuntu/backend.tar /home/ubuntu/frontend.tar
-                        "
+                        ssh -o StrictHostKeyChecking=no -i "%SSH_KEY%" %EC2_USER%@%EC2_HOST% "docker load -i /home/ubuntu/backend.tar && docker load -i /home/ubuntu/frontend.tar && cd /home/ubuntu/url-shortener && docker compose down || true && DATABASE_URL='%DATABASE_URL%' JWT_KEY='%JWT_KEY%' SMTP_USER='%SMTP_USER%' SMTP_PASS='%SMTP_PASS%' FRONTEND_URL='http://%EC2_HOST%' docker compose up -d && sleep 10 && curl -f http://localhost:3000/health && echo Deployment successful! && rm -f /home/ubuntu/backend.tar /home/ubuntu/frontend.tar"
                     """
                 }
             }
