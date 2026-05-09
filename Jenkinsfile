@@ -10,8 +10,8 @@ pipeline {
         EC2_USER = "ubuntu"
         EC2_HOST = "3.17.73.31"
 
-        // Path to your local .pem key file (already has correct permissions)
-        SSH_KEY_PATH = "D:\\DevOps\\AWS Learning\\url-shortener-key.pem"
+        // Path to .pem key in Jenkins directory (SYSTEM account has read access here)
+        SSH_KEY_PATH = "C:\\ProgramData\\Jenkins\\url-shortener-key.pem"
 
         // Secrets pulled from Jenkins credential store (never hardcode!)
         DATABASE_URL = credentials('aiven-database-url')
