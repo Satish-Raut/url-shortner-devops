@@ -10,6 +10,9 @@ pipeline {
         EC2_USER = "ubuntu"
         EC2_HOST = "3.17.73.31"
 
+        // Path to your local .pem key file (already has correct permissions)
+        SSH_KEY_PATH = "D:\\DevOps\\AWS Learning\\url-shortener-key.pem"
+
         // Secrets pulled from Jenkins credential store (never hardcode!)
         DATABASE_URL = credentials('aiven-database-url')
         JWT_KEY      = credentials('jwt-key')
@@ -83,22 +86,15 @@ pipeline {
         stage('Deploy to EC2') {
             steps {
                 echo '🚀 Transferring images and deploying to EC2...'
-                // Use withCredentials instead of sshagent (fixes Windows ssh-agent compatibility issue)
-                withCredentials([sshUserPrivateKey(credentialsId: 'ec2-ssh-key', keyFileVariable: 'SSH_KEY', usernameVariable: 'SSH_USER')]) {
+                // Use local .pem file directly (avoids Windows temp-file permission issues)
+                bat "scp -o StrictHostKeyChecking=no -i \"%SSH_KEY_PATH%\" backend.tar %EC2_USER%@%EC2_HOST%:/home/ubuntu/"
+                bat "scp -o StrictHostKeyChecking=no -i \"%SSH_KEY_PATH%\" frontend.tar %EC2_USER%@%EC2_HOST%:/home/ubuntu/"
+                bat "scp -o StrictHostKeyChecking=no -i \"%SSH_KEY_PATH%\" docker-compose.yml %EC2_USER%@%EC2_HOST%:/home/ubuntu/url-shortener/"
 
-                    // Fix Windows permissions on temp key file (SSH requires strict permissions)
-                    bat "icacls \"%SSH_KEY%\" /inheritance:r /grant:r \"%USERNAME%:(R)\""
-
-                    // Copy image tar files to EC2 using -i with the key file
-                    bat "scp -o StrictHostKeyChecking=no -i \"%SSH_KEY%\" backend.tar %EC2_USER%@%EC2_HOST%:/home/ubuntu/"
-                    bat "scp -o StrictHostKeyChecking=no -i \"%SSH_KEY%\" frontend.tar %EC2_USER%@%EC2_HOST%:/home/ubuntu/"
-                    bat "scp -o StrictHostKeyChecking=no -i \"%SSH_KEY%\" docker-compose.yml %EC2_USER%@%EC2_HOST%:/home/ubuntu/url-shortener/"
-
-                    // SSH into EC2, load images, restart containers
-                    bat """
-                        ssh -o StrictHostKeyChecking=no -i "%SSH_KEY%" %EC2_USER%@%EC2_HOST% "docker load -i /home/ubuntu/backend.tar && docker load -i /home/ubuntu/frontend.tar && cd /home/ubuntu/url-shortener && docker compose down || true && DATABASE_URL='%DATABASE_URL%' JWT_KEY='%JWT_KEY%' SMTP_USER='%SMTP_USER%' SMTP_PASS='%SMTP_PASS%' FRONTEND_URL='http://%EC2_HOST%' docker compose up -d && sleep 10 && curl -f http://localhost:3000/health && echo Deployment successful! && rm -f /home/ubuntu/backend.tar /home/ubuntu/frontend.tar"
-                    """
-                }
+                // SSH into EC2, load images, restart containers
+                bat """
+                    ssh -o StrictHostKeyChecking=no -i "%SSH_KEY_PATH%" %EC2_USER%@%EC2_HOST% "docker load -i /home/ubuntu/backend.tar && docker load -i /home/ubuntu/frontend.tar && cd /home/ubuntu/url-shortener && docker compose down || true && DATABASE_URL='%DATABASE_URL%' JWT_KEY='%JWT_KEY%' SMTP_USER='%SMTP_USER%' SMTP_PASS='%SMTP_PASS%' FRONTEND_URL='http://%EC2_HOST%' docker compose up -d && sleep 10 && curl -f http://localhost:3000/health && echo 'Deployment successful!' && rm -f /home/ubuntu/backend.tar /home/ubuntu/frontend.tar"
+                """
             }
         }
     }
