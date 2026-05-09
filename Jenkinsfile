@@ -86,6 +86,9 @@ pipeline {
                 // Use withCredentials instead of sshagent (fixes Windows ssh-agent compatibility issue)
                 withCredentials([sshUserPrivateKey(credentialsId: 'ec2-ssh-key', keyFileVariable: 'SSH_KEY', usernameVariable: 'SSH_USER')]) {
 
+                    // Fix Windows permissions on temp key file (SSH requires strict permissions)
+                    bat "icacls \"%SSH_KEY%\" /inheritance:r /grant:r \"%USERNAME%:(R)\""
+
                     // Copy image tar files to EC2 using -i with the key file
                     bat "scp -o StrictHostKeyChecking=no -i \"%SSH_KEY%\" backend.tar %EC2_USER%@%EC2_HOST%:/home/ubuntu/"
                     bat "scp -o StrictHostKeyChecking=no -i \"%SSH_KEY%\" frontend.tar %EC2_USER%@%EC2_HOST%:/home/ubuntu/"
