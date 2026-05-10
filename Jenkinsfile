@@ -36,10 +36,6 @@ pipeline {
         stage('Health Validation') {
             steps {
                 echo 'Running health check on backend container...'
-
-                // Pre-cleanup: remove any leftover container from a previous failed build
-                bat "docker rm -f test-backend 2>nul || echo no leftover container"
-
                 bat """
                     (
                         echo DATABASE_URL=%DATABASE_URL%
@@ -52,14 +48,7 @@ pipeline {
                     ) > health.env
                 """
                 bat "docker run -d --name test-backend -p 3001:3000 --env-file health.env %BACKEND_IMAGE%:%IMAGE_TAG%"
-
-                // Wait 20s for Node.js to start (PowerShell sleep is reliable on Windows)
-                bat "powershell -Command \"Start-Sleep -Seconds 20\""
-
-                // Show container state and logs for debugging
-                bat "docker inspect test-backend --format=Container status: {{.State.Status}}"
-                bat "docker logs test-backend || echo no-logs-available"
-
+                bat "ping -n 12 127.0.0.1 > nul"
                 bat "curl -f http://localhost:3001/health || exit 1"
                 echo 'Health check PASSED!'
             }
