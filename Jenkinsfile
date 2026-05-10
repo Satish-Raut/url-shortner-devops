@@ -53,11 +53,12 @@ pipeline {
                 """
                 bat "docker run -d --name test-backend -p 3001:3000 --env-file health.env %BACKEND_IMAGE%:%IMAGE_TAG%"
 
-                // Wait 20s for Node.js to fully start and connect to database
-                bat "ping -n 21 127.0.0.1 > nul"
+                // Wait 20s for Node.js to start (PowerShell sleep is reliable on Windows)
+                bat "powershell -Command \"Start-Sleep -Seconds 20\""
 
-                // Print container logs so we can see any startup errors in Jenkins output
-                bat "docker logs test-backend"
+                // Show container state and logs for debugging
+                bat "docker inspect test-backend --format=Container status: {{.State.Status}}"
+                bat "docker logs test-backend || echo no-logs-available"
 
                 bat "curl -f http://localhost:3001/health || exit 1"
                 echo 'Health check PASSED!'
