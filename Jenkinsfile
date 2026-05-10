@@ -36,6 +36,10 @@ pipeline {
         stage('Health Validation') {
             steps {
                 echo 'Running health check on backend container...'
+
+                // Pre-cleanup: remove any leftover container from a previous failed build
+                bat "docker rm -f test-backend 2>nul || echo no leftover container"
+
                 bat """
                     (
                         echo DATABASE_URL=%DATABASE_URL%
@@ -48,7 +52,13 @@ pipeline {
                     ) > health.env
                 """
                 bat "docker run -d --name test-backend -p 3001:3000 --env-file health.env %BACKEND_IMAGE%:%IMAGE_TAG%"
-                bat "ping -n 12 127.0.0.1 > nul"
+
+                // Wait 20s for Node.js to fully start and connect to database
+                bat "ping -n 21 127.0.0.1 > nul"
+
+                // Print container logs so we can see any startup errors in Jenkins output
+                bat "docker logs test-backend"
+
                 bat "curl -f http://localhost:3001/health || exit 1"
                 echo 'Health check PASSED!'
             }
