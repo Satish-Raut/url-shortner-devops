@@ -6,12 +6,8 @@ pipeline {
         FRONTEND_IMAGE = "url-shortener-frontend"
         IMAGE_TAG      = "${BUILD_NUMBER}"
 
-        // Your EC2 details
         EC2_USER = "ubuntu"
         EC2_HOST = "3.17.73.31"
-
-        // Path to .pem key (SYSTEM-only permissions set, no Administrators group)
-        SSH_KEY_PATH = "C:\\ProgramData\\Jenkins\\url-shortener-key.pem"
 
         // Secrets pulled from Jenkins credential store (never hardcode!)
         DATABASE_URL = credentials('aiven-database-url')
@@ -34,7 +30,6 @@ pipeline {
         stage('Build Docker Images') {
             steps {
                 echo '🐳 Building Docker images on local machine...'
-                // Windows Jenkins uses 'bat' instead of 'sh'
                 bat "docker build -t %BACKEND_IMAGE%:%IMAGE_TAG% -t %BACKEND_IMAGE%:latest ./Backend"
                 bat "docker build -t %FRONTEND_IMAGE%:%IMAGE_TAG% -t %FRONTEND_IMAGE%:latest ./Frontend"
                 echo '✅ Docker images built!'
@@ -45,29 +40,29 @@ pipeline {
         stage('Health Validation') {
             steps {
                 echo '🏥 Running health check on backend container...'
+
+                // Write local .env for docker run (avoids -e flag secret exposure)
                 bat """
-                    docker run -d --name test-backend -p 3001:3000 ^
-                        -e DATABASE_URL=%DATABASE_URL% ^
-                        -e JWT_KEY=%JWT_KEY% ^
-                        -e NODE_ENV=production ^
-                        -e PORT=3000 ^
-                        -e SMTP_USER=%SMTP_USER% ^
-                        -e SMTP_PASS=%SMTP_PASS% ^
-                        -e FRONTEND_URL=http://localhost ^
-                        %BACKEND_IMAGE%:%IMAGE_TAG%
+                    (
+                        echo DATABASE_URL=%DATABASE_URL%
+                        echo JWT_KEY=%JWT_KEY%
+                        echo NODE_ENV=production
+                        echo PORT=3000
+                        echo SMTP_USER=%SMTP_USER%
+                        echo SMTP_PASS=%SMTP_PASS%
+                        echo FRONTEND_URL=http://localhost
+                    ) > health.env
                 """
-                // Wait 12 seconds for container to start
+
+                bat "docker run -d --name test-backend -p 3001:3000 --env-file health.env %BACKEND_IMAGE%:%IMAGE_TAG%"
                 bat "ping -n 12 127.0.0.1 > nul"
-
-                // Hit the /health endpoint
                 bat "curl -f http://localhost:3001/health || exit 1"
-
                 echo '✅ Health check PASSED!'
             }
             post {
                 always {
-                    // Always clean up test container whether passed or failed
                     bat "docker rm -f test-backend || echo already removed"
+                    bat "del /f health.env 2>nul || echo nothing to clean"
                 }
             }
         }
@@ -87,7 +82,7 @@ pipeline {
             steps {
                 echo '🚀 Transferring images and deploying to EC2...'
 
-                // Step 1: Create .env file locally (Jenkins masks secrets in logs)
+                // Step 1: Create deploy .env locally
                 bat """
                     (
                         echo DATABASE_URL=%DATABASE_URL%
@@ -100,14 +95,17 @@ pipeline {
                     ) > deploy.env
                 """
 
-                // Step 2: Use Jenkins SSH credentials with PowerShell ACL fix
-                // Jenkins runs as SYSTEM which has SeSecurityPrivilege — Set-Acl WILL work here
+                // Step 2: Use Jenkins SSH credentials — fix permissions with PowerShell
+                // Jenkins runs as SYSTEM which has SeSecurityPrivilege → Set-Acl works here
                 withCredentials([sshUserPrivateKey(credentialsId: 'ec2-ssh-key', keyFileVariable: 'SSH_KEY')]) {
 
-                    // Fix permissions on the Jenkins temp key file using PowerShell (runs as SYSTEM)
+                    // Fix Windows ACL on the Jenkins temp key file (SYSTEM can do this)
                     bat '''powershell -ExecutionPolicy Bypass -Command "& { $k=$env:SSH_KEY; $acl=New-Object System.Security.AccessControl.FileSecurity; $acl.SetAccessRuleProtection($true,$false); $r=New-Object System.Security.AccessControl.FileSystemAccessRule('NT AUTHORITY\\SYSTEM','Read','Allow'); $acl.SetAccessRule($r); [IO.File]::SetAccessControl($k,$acl); Write-Host 'Permissions fixed on' $k }"'''
 
-                    // SCP images, compose, and .env to EC2
+                    // Ensure destination directory exists on EC2
+                    bat "ssh -o StrictHostKeyChecking=no -i \"%SSH_KEY%\" %EC2_USER%@%EC2_HOST% \"mkdir -p /home/ubuntu/url-shortener\""
+
+                    // SCP images, compose file, and .env to EC2
                     bat "scp -o StrictHostKeyChecking=no -i \"%SSH_KEY%\" backend.tar %EC2_USER%@%EC2_HOST%:/home/ubuntu/"
                     bat "scp -o StrictHostKeyChecking=no -i \"%SSH_KEY%\" frontend.tar %EC2_USER%@%EC2_HOST%:/home/ubuntu/"
                     bat "scp -o StrictHostKeyChecking=no -i \"%SSH_KEY%\" docker-compose.yml %EC2_USER%@%EC2_HOST%:/home/ubuntu/url-shortener/"
@@ -116,17 +114,16 @@ pipeline {
                     // Load images on EC2
                     bat "ssh -o StrictHostKeyChecking=no -i \"%SSH_KEY%\" %EC2_USER%@%EC2_HOST% \"docker load -i /home/ubuntu/backend.tar && docker load -i /home/ubuntu/frontend.tar\""
 
-                    // Restart containers using .env file
-                    bat "ssh -o StrictHostKeyChecking=no -i \"%SSH_KEY%\" %EC2_USER%@%EC2_HOST% \"cd /home/ubuntu/url-shortener && docker compose down || echo 'WARNING: compose down failed' && docker compose --env-file .env up -d\""
+                    // Restart containers — correct compose down logic (subshell prevents short-circuit)
+                    bat "ssh -o StrictHostKeyChecking=no -i \"%SSH_KEY%\" %EC2_USER%@%EC2_HOST% \"cd /home/ubuntu/url-shortener && (docker compose down || echo 'WARNING: compose down failed, continuing...') && docker compose --env-file .env up -d\""
 
-                    // Wait and verify health on EC2
-                    bat "ping -n 15 127.0.0.1 >nul"
-                    bat "ssh -o StrictHostKeyChecking=no -i \"%SSH_KEY%\" %EC2_USER%@%EC2_HOST% \"curl -f http://localhost:3000/health && echo 'EC2 health check passed!'\""
+                    // Sleep on EC2 side, then verify health
+                    bat "ssh -o StrictHostKeyChecking=no -i \"%SSH_KEY%\" %EC2_USER%@%EC2_HOST% \"sleep 15 && curl -f http://localhost:3000/health && echo '✅ EC2 health check passed!'\""
 
                     // Cleanup tar files on EC2
                     bat "ssh -o StrictHostKeyChecking=no -i \"%SSH_KEY%\" %EC2_USER%@%EC2_HOST% \"rm -f /home/ubuntu/backend.tar /home/ubuntu/frontend.tar\""
                 }
-`            }
+            }
         }
     }
 
@@ -138,8 +135,8 @@ pipeline {
             echo '❌ Pipeline FAILED! Check the logs above for details.'
         }
         always {
-            // Clean up local tar files and unused Docker resources
-            bat "del /f backend.tar frontend.tar deploy.env 2>nul || echo nothing to clean"
+            // Clean up ALL local secret files and tar files
+            bat "del /f backend.tar frontend.tar deploy.env health.env 2>nul || echo nothing to clean"
             bat "docker system prune -f || echo pruned"
         }
     }
