@@ -13,7 +13,12 @@ RUN npm install
 
 COPY . .
 
-# Build the React app — creates /app/dist folder with static HTML/CSS/JS
+# Bake VITE_API_URL into the React bundle at build time
+# /api is the nginx reverse proxy path that forwards to the backend container
+ARG VITE_API_URL=/api
+ENV VITE_API_URL=${VITE_API_URL}
+
+# Build the React app
 RUN npm run build
 
 # ─────────────────────────────────────────────
