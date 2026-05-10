@@ -120,20 +120,23 @@ export const hybridAuth = async ({ req, res, name, email, user }) => {
   const refreshToken = await createRefreshToken(session);
 
   const isProduction = process.env.NODE_ENV === "production";
+  // Use secure cookies ONLY when HTTPS is explicitly enabled.
+  // On plain HTTP (no SSL cert), secure:true causes browsers to silently drop cookies.
+  const isHttps = process.env.HTTPS === "true";
 
   // {iv. Send the access token to frontend}
   res.cookie("access_token", accessToken, {
     httpOnly: true,
-    secure: isProduction,
-    sameSite: isProduction ? "none" : "lax",
+    secure: isHttps,
+    sameSite: isHttps ? "none" : "lax",
     maxAge: ACCESS_TOKEN_EXPIRY,
   });
 
   // {v. Send the refresh token to frontend}
   res.cookie("refresh_token", refreshToken, {
     httpOnly: true,
-    secure: isProduction,
-    sameSite: isProduction ? "none" : "lax",
+    secure: isHttps,
+    sameSite: isHttps ? "none" : "lax",
     maxAge: REFRESH_TOKEN_EXPIRY,
   });
 };
