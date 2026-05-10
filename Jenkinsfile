@@ -90,7 +90,7 @@ pipeline {
                 withCredentials([sshUserPrivateKey(credentialsId: 'ec2-ssh-key', keyFileVariable: 'SSH_KEY')]) {
 
                     // Fix key file permissions: SYSTEM-only read access
-                    bat "powershell -ExecutionPolicy Bypass -Command \"$k=$env:SSH_KEY; $acl=New-Object System.Security.AccessControl.FileSecurity; $acl.SetAccessRuleProtection($true,$false); $r=New-Object System.Security.AccessControl.FileSystemAccessRule('NT AUTHORITY\\SYSTEM','Read','Allow'); $acl.SetAccessRule($r); [IO.File]::SetAccessControl($k,$acl); Write-Host Permissions fixed\""
+                    bat 'powershell -ExecutionPolicy Bypass -Command "$k=$env:SSH_KEY; $acl=New-Object System.Security.AccessControl.FileSecurity; $acl.SetAccessRuleProtection($true,$false); $r=New-Object System.Security.AccessControl.FileSystemAccessRule(\'NT AUTHORITY\\SYSTEM\',\'Read\',\'Allow\'); $acl.SetAccessRule($r); [IO.File]::SetAccessControl($k,$acl); Write-Host Permissions-fixed"'
 
                     // Ensure EC2 deploy directory exists
                     bat "ssh -o StrictHostKeyChecking=no -i \"%SSH_KEY%\" %EC2_USER%@%EC2_HOST% \"mkdir -p /home/ubuntu/url-shortener\""
