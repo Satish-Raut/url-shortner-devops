@@ -36,17 +36,15 @@ pipeline {
         stage('Health Validation') {
             steps {
                 echo 'Running health check on backend container...'
-                bat """
-                    (
-                        echo DATABASE_URL=%DATABASE_URL%
-                        echo JWT_KEY=%JWT_KEY%
-                        echo NODE_ENV=production
-                        echo PORT=3000
-                        echo SMTP_USER=%SMTP_USER%
-                        echo SMTP_PASS=%SMTP_PASS%
-                        echo FRONTEND_URL=http://localhost
-                    ) > health.env
-                """
+                writeFile file: 'health.env', text: """
+DATABASE_URL=${DATABASE_URL}
+JWT_KEY=${JWT_KEY}
+NODE_ENV=production
+PORT=3000
+SMTP_USER=${SMTP_USER}
+SMTP_PASS=${SMTP_PASS}
+FRONTEND_URL=http://localhost
+""".trim()
                 bat "docker run -d --name test-backend -p 3001:3000 --env-file health.env %BACKEND_IMAGE%:%IMAGE_TAG%"
                 bat "ping -n 12 127.0.0.1 > nul"
                 bat "curl -f http://localhost:3001/health || exit 1"
@@ -74,17 +72,15 @@ pipeline {
                 echo 'Transferring images and deploying to EC2...'
 
                 // Write deploy .env file locally
-                bat """
-                    (
-                        echo DATABASE_URL=%DATABASE_URL%
-                        echo JWT_KEY=%JWT_KEY%
-                        echo SMTP_USER=%SMTP_USER%
-                        echo SMTP_PASS=%SMTP_PASS%
-                        echo FRONTEND_URL=http://%EC2_HOST%
-                        echo NODE_ENV=production
-                        echo PORT=3000
-                    ) > deploy.env
-                """
+                writeFile file: 'deploy.env', text: """
+DATABASE_URL=${DATABASE_URL}
+JWT_KEY=${JWT_KEY}
+SMTP_USER=${SMTP_USER}
+SMTP_PASS=${SMTP_PASS}
+FRONTEND_URL=http://${EC2_HOST}
+NODE_ENV=production
+PORT=3000
+""".trim()
 
                 // Use Jenkins SSH credentials, fix ACL with PowerShell (Jenkins=SYSTEM has SeSecurityPrivilege)
                 withCredentials([sshUserPrivateKey(credentialsId: 'ec2-ssh-key', keyFileVariable: 'SSH_KEY')]) {
