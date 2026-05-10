@@ -87,7 +87,7 @@ pipeline {
             steps {
                 echo '🚀 Transferring images and deploying to EC2...'
 
-                // Step 1: Create .env file locally (Jenkins masks these in logs)
+                // Step 1: Create .env file locally (Jenkins masks secrets in logs)
                 bat """
                     (
                         echo DATABASE_URL=%DATABASE_URL%
@@ -100,25 +100,33 @@ pipeline {
                     ) > deploy.env
                 """
 
-                // Step 2: SCP images, compose file, and .env to EC2
-                bat "scp -o StrictHostKeyChecking=no -i \"%SSH_KEY_PATH%\" backend.tar %EC2_USER%@%EC2_HOST%:/home/ubuntu/"
-                bat "scp -o StrictHostKeyChecking=no -i \"%SSH_KEY_PATH%\" frontend.tar %EC2_USER%@%EC2_HOST%:/home/ubuntu/"
-                bat "scp -o StrictHostKeyChecking=no -i \"%SSH_KEY_PATH%\" docker-compose.yml %EC2_USER%@%EC2_HOST%:/home/ubuntu/url-shortener/"
-                bat "scp -o StrictHostKeyChecking=no -i \"%SSH_KEY_PATH%\" deploy.env %EC2_USER%@%EC2_HOST%:/home/ubuntu/url-shortener/.env"
+                // Step 2: Use Jenkins SSH credentials with PowerShell ACL fix
+                // Jenkins runs as SYSTEM which has SeSecurityPrivilege — Set-Acl WILL work here
+                withCredentials([sshUserPrivateKey(credentialsId: 'ec2-ssh-key', keyFileVariable: 'SSH_KEY')]) {
 
-                // Step 3: Load images on EC2
-                bat "ssh -o StrictHostKeyChecking=no -i \"%SSH_KEY_PATH%\" %EC2_USER%@%EC2_HOST% \"docker load -i /home/ubuntu/backend.tar && docker load -i /home/ubuntu/frontend.tar\""
+                    // Fix permissions on the Jenkins temp key file using PowerShell (runs as SYSTEM)
+                    bat '''powershell -ExecutionPolicy Bypass -Command "& { $k=$env:SSH_KEY; $acl=New-Object System.Security.AccessControl.FileSecurity; $acl.SetAccessRuleProtection($true,$false); $r=New-Object System.Security.AccessControl.FileSystemAccessRule('NT AUTHORITY\\SYSTEM','Read','Allow'); $acl.SetAccessRule($r); [IO.File]::SetAccessControl($k,$acl); Write-Host 'Permissions fixed on' $k }"'''
 
-                // Step 4: Restart containers using .env file (no secrets in command)
-                bat "ssh -o StrictHostKeyChecking=no -i \"%SSH_KEY_PATH%\" %EC2_USER%@%EC2_HOST% \"cd /home/ubuntu/url-shortener && docker compose down || echo 'WARNING: compose down failed' && docker compose --env-file .env up -d\""
+                    // SCP images, compose, and .env to EC2
+                    bat "scp -o StrictHostKeyChecking=no -i \"%SSH_KEY%\" backend.tar %EC2_USER%@%EC2_HOST%:/home/ubuntu/"
+                    bat "scp -o StrictHostKeyChecking=no -i \"%SSH_KEY%\" frontend.tar %EC2_USER%@%EC2_HOST%:/home/ubuntu/"
+                    bat "scp -o StrictHostKeyChecking=no -i \"%SSH_KEY%\" docker-compose.yml %EC2_USER%@%EC2_HOST%:/home/ubuntu/url-shortener/"
+                    bat "scp -o StrictHostKeyChecking=no -i \"%SSH_KEY%\" deploy.env %EC2_USER%@%EC2_HOST%:/home/ubuntu/url-shortener/.env"
 
-                // Step 5: Wait and verify health
-                bat "ping -n 15 127.0.0.1 >nul"
-                bat "ssh -o StrictHostKeyChecking=no -i \"%SSH_KEY_PATH%\" %EC2_USER%@%EC2_HOST% \"curl -f http://localhost:3000/health && echo '✅ EC2 health check passed!'\""
+                    // Load images on EC2
+                    bat "ssh -o StrictHostKeyChecking=no -i \"%SSH_KEY%\" %EC2_USER%@%EC2_HOST% \"docker load -i /home/ubuntu/backend.tar && docker load -i /home/ubuntu/frontend.tar\""
 
-                // Step 6: Clean up tar files on EC2
-                bat "ssh -o StrictHostKeyChecking=no -i \"%SSH_KEY_PATH%\" %EC2_USER%@%EC2_HOST% \"rm -f /home/ubuntu/backend.tar /home/ubuntu/frontend.tar\""
-            }
+                    // Restart containers using .env file
+                    bat "ssh -o StrictHostKeyChecking=no -i \"%SSH_KEY%\" %EC2_USER%@%EC2_HOST% \"cd /home/ubuntu/url-shortener && docker compose down || echo 'WARNING: compose down failed' && docker compose --env-file .env up -d\""
+
+                    // Wait and verify health on EC2
+                    bat "ping -n 15 127.0.0.1 >nul"
+                    bat "ssh -o StrictHostKeyChecking=no -i \"%SSH_KEY%\" %EC2_USER%@%EC2_HOST% \"curl -f http://localhost:3000/health && echo 'EC2 health check passed!'\""
+
+                    // Cleanup tar files on EC2
+                    bat "ssh -o StrictHostKeyChecking=no -i \"%SSH_KEY%\" %EC2_USER%@%EC2_HOST% \"rm -f /home/ubuntu/backend.tar /home/ubuntu/frontend.tar\""
+                }
+`            }
         }
     }
 
