@@ -46,7 +46,7 @@ SMTP_PASS=${SMTP_PASS}
 FRONTEND_URL=http://localhost
 """.trim()
                 bat "docker run -d --name test-backend -p 3001:3000 --env-file health.env %BACKEND_IMAGE%:%IMAGE_TAG%"
-                bat "ping -n 12 127.0.0.1 > nul"
+                bat "powershell -Command \"Start-Sleep -Seconds 12\""
                 bat "curl -f http://localhost:3001/health || exit 1"
                 echo 'Health check PASSED!'
             }
